@@ -35,16 +35,10 @@ Aplikasi ini dibuat sebagai pengalaman photo booth yang unik dan lebih interakti
 ## Cara menjalankan
 
 1. Buka terminal di folder project.
-2. Jalankan salah satu perintah berikut:
+2. Jalankan menggunakan ekstensi Live Server:
 
    ```bash
-   python -m http.server 8000
-   ```
-
-   atau jika Anda menggunakan Node.js:
-
-   ```bash
-   npx serve .
+   Jalankan pada index.html
    ```
 
 3. Buka browser dan akses:
