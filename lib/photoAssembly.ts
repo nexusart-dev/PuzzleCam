@@ -13,6 +13,10 @@ export async function assemblePhotos(
   photos: { memberId: string; name: string; imageData: string }[],
   options: AssemblyOptions = {}
 ): Promise<string> {
+  if (photos.length === 0) {
+    return Promise.reject(new Error('No photos to assemble'));
+  }
+
   const cellWidth = options.cellWidth ?? 400;
   const cellHeight = options.cellHeight ?? 300;
   const gap = options.gap ?? 12;

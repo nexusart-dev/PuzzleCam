@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pusherServer } from '@/lib/pusherServer';
-import { sessions, MAX_MEMBERS } from '@/lib/sessionStore';
+import { sessions } from '@/lib/sessionStore';
 
 export async function POST(request: Request): Promise<NextResponse> {
   if (!pusherServer) {
@@ -28,16 +28,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     const token = tokenMatch[1];
     const session = sessions.get(token);
 
-    if (session) {
-      if (session.memberCount >= MAX_MEMBERS) {
-        return NextResponse.json(
-          { error: 'Sesi penuh (maks. 6 peserta)' },
-          { status: 403 }
-        );
-      }
-      // Increment here — this endpoint is called exactly once per real Pusher
-      // subscription, so the count is accurate even when users refresh or retry GET.
-      session.memberCount += 1;
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Sesi tidak ditemukan' },
+        { status: 404 }
+      );
     }
   }
 

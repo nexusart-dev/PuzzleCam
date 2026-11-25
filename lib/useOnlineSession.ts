@@ -117,11 +117,37 @@ export function useOnlineSession(
   }, []);
 
   // -------------------------------------------------------------------------
+  // submitPhoto — single code path for sending a captured frame to all peers
+  // -------------------------------------------------------------------------
+
+  const submitPhoto = useCallback(
+    async (imageDataUrl: string) => {
+      const currentSession = sessionRef.current;
+      if (!currentSession) return;
+
+      const channel = channelRef.current;
+      const me = channel?.members?.me as { id: string } | undefined;
+      const memberId = me?.id ?? crypto.randomUUID();
+
+      await fetch('/api/session/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: currentSession.channelName,
+          event: 'client-photo',
+          data: { memberId, name: displayName, imageData: imageDataUrl },
+        }),
+      });
+    },
+    [displayName]
+  );
+
+  // -------------------------------------------------------------------------
   // captureAndSubmit (called internally when countdown reaches 0)
   // -------------------------------------------------------------------------
 
   const captureAndSubmit = useCallback(
-    async (channelName: string) => {
+    async (_channelName: string) => {
       const video = videoRef.current;
       if (!video) return;
 
@@ -138,23 +164,11 @@ export function useOnlineSession(
       ctx.drawImage(video, 0, 0, CAPTURE_W, CAPTURE_H);
       const imageData = canvas.toDataURL('image/jpeg', 0.6);
 
-      const channel = channelRef.current;
-      const me = channel?.members?.me as { id: string } | undefined;
-      const memberId = me?.id ?? crypto.randomUUID();
-
       setSession((prev) => (prev ? { ...prev, status: 'capturing' } : prev));
 
-      await fetch('/api/session/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: channelName,
-          event: 'client-photo',
-          data: { memberId, name: displayName, imageData },
-        }),
-      });
+      await submitPhoto(imageData);
     },
-    [videoRef, displayName]
+    [videoRef, submitPhoto]
   );
 
   // -------------------------------------------------------------------------
@@ -220,6 +234,7 @@ export function useOnlineSession(
             );
             // Capture runs outside the updater — safe to call async here.
             void captureAndSubmit(channelName);
+            setCountdownValue(null);
           }
         }
       );
@@ -376,31 +391,6 @@ export function useOnlineSession(
       }
     }
   }, [session]);
-
-  // -------------------------------------------------------------------------
-  // submitPhoto (manual submission)
-  // -------------------------------------------------------------------------
-
-  const submitPhoto = useCallback(
-    async (imageDataUrl: string) => {
-      if (!session) return;
-
-      const channel = channelRef.current;
-      const me = channel?.members?.me as { id: string } | undefined;
-      const memberId = me?.id ?? crypto.randomUUID();
-
-      await fetch('/api/session/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: session.channelName,
-          event: 'client-photo',
-          data: { memberId, name: displayName, imageData: imageDataUrl },
-        }),
-      });
-    },
-    [session, displayName]
-  );
 
   // -------------------------------------------------------------------------
   // leaveSession

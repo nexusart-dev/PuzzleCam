@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sessions, pruneExpired, MAX_MEMBERS } from '@/lib/sessionStore';
+import { sessions, pruneExpired } from '@/lib/sessionStore';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const TOKEN_LENGTH = 6;
@@ -59,18 +59,6 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 
-  // memberCount is authoritative only after auth-endpoint increments.
-  // Guard against obviously-full sessions; the auth endpoint enforces the hard cap.
-  if (session.memberCount >= MAX_MEMBERS) {
-    return NextResponse.json(
-      { error: 'Sesi penuh (maks. 6 peserta)' },
-      { status: 403 }
-    );
-  }
-
-  // Do NOT increment memberCount here — the auth endpoint handles that
-  // exactly once per real Pusher subscription, preventing double-counting
-  // when users refresh or retry.
   return NextResponse.json({ token: session.token, channelName: session.channelName });
 }
 
