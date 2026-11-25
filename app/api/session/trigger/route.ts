@@ -8,6 +8,13 @@ interface TriggerBody {
   excludeSocketId?: string;
 }
 
+/** Only these event names may be triggered through this endpoint. */
+const ALLOWED_EVENTS = new Set([
+  'client-countdown',
+  'client-photo',
+  'client-collage-ready',
+]);
+
 export async function POST(request: Request): Promise<NextResponse> {
   if (!pusherServer) {
     return NextResponse.json(
@@ -32,8 +39,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  if (!event) {
-    return NextResponse.json({ error: 'event is required' }, { status: 400 });
+  if (!event || !ALLOWED_EVENTS.has(event)) {
+    return NextResponse.json(
+      { error: `Event '${event}' is not permitted` },
+      { status: 400 }
+    );
   }
 
   await pusherServer.trigger(

@@ -1,19 +1,9 @@
 import { NextResponse } from 'next/server';
-
-interface Session {
-  token: string;
-  channelName: string;
-  createdAt: number;
-  memberCount: number;
-}
-
-const sessions = new Map<string, Session>();
+import { sessions, pruneExpired, MAX_MEMBERS } from '@/lib/sessionStore';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const TOKEN_LENGTH = 6;
-const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_SESSIONS = 1000;
-const MAX_MEMBERS = 6;
 
 function generateToken(): string {
   let token = '';
@@ -21,15 +11,6 @@ function generateToken(): string {
     token += TOKEN_ALPHABET[Math.floor(Math.random() * TOKEN_ALPHABET.length)];
   }
   return token;
-}
-
-function pruneExpired(): void {
-  const now = Date.now();
-  for (const [key, session] of sessions.entries()) {
-    if (now - session.createdAt > SESSION_TTL_MS) {
-      sessions.delete(key);
-    }
-  }
 }
 
 export async function POST(): Promise<NextResponse> {
@@ -78,6 +59,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 
+  // memberCount is authoritative only after auth-endpoint increments.
+  // Guard against obviously-full sessions; the auth endpoint enforces the hard cap.
   if (session.memberCount >= MAX_MEMBERS) {
     return NextResponse.json(
       { error: 'Sesi penuh (maks. 6 peserta)' },
@@ -85,7 +68,10 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 
-  session.memberCount += 1;
-
+  // Do NOT increment memberCount here — the auth endpoint handles that
+  // exactly once per real Pusher subscription, preventing double-counting
+  // when users refresh or retry.
   return NextResponse.json({ token: session.token, channelName: session.channelName });
 }
+
+

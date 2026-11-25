@@ -82,44 +82,39 @@ export function useOnlineSession(
   const channelRef = useRef<PresenceChannel | null>(null);
   const photosRef = useRef<Map<string, { name: string; imageData: string }>>(new Map());
   const assemblingRef = useRef(false);
+  // Keep a stable ref to the current session so event handlers can read it
+  // without being recreated every time session changes.
+  const sessionRef = useRef<OnlineSession | null>(null);
   const pusherUnconfigured = !isPusherConfigured();
 
+  // Keep sessionRef in sync with the state value.
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   // -------------------------------------------------------------------------
-  // Assemble all photos (host only)
+  // assembleLocal — every participant (host and guests) assembles their own
+  // collage from the photos stored in photosRef. No collage data is sent over
+  // Pusher, keeping all event payloads well under the 10 KB free-tier limit.
   // -------------------------------------------------------------------------
 
-  const assembleAll = useCallback(
-    async (channelName: string) => {
-      // Guard against re-entry: if already assembling, skip subsequent triggers
-      if (assemblingRef.current) return;
-      assemblingRef.current = true;
+  const assembleLocal = useCallback(async () => {
+    if (assemblingRef.current) return;
+    assemblingRef.current = true;
 
-      setSession((prev) => (prev ? { ...prev, status: 'assembling' } : prev));
+    setSession((prev) => (prev ? { ...prev, status: 'assembling' } : prev));
 
-      const photos = Array.from(photosRef.current.entries()).map(([memberId, v]) => ({
-        memberId,
-        name: v.name,
-        imageData: v.imageData,
-      }));
+    const photos = Array.from(photosRef.current.entries()).map(([memberId, v]) => ({
+      memberId,
+      name: v.name,
+      imageData: v.imageData,
+    }));
 
-      const url = await assemblePhotos(photos, {});
+    const url = await assemblePhotos(photos, {});
 
-      setCollageUrl(url);
-      setSession((prev) => (prev ? { ...prev, status: 'done' } : prev));
-
-      // Broadcast collage to all participants
-      await fetch('/api/session/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: channelName,
-          event: 'client-collage',
-          data: { collageUrl: url },
-        }),
-      });
-    },
-    []
-  );
+    setCollageUrl(url);
+    setSession((prev) => (prev ? { ...prev, status: 'done' } : prev));
+  }, []);
 
   // -------------------------------------------------------------------------
   // captureAndSubmit (called internally when countdown reaches 0)
@@ -130,7 +125,7 @@ export function useOnlineSession(
       const video = videoRef.current;
       if (!video) return;
 
-      // Downscale to 160x120 to stay under Pusher's 10KB payload limit
+      // Downscale to 160x120 to stay under Pusher's 10 KB payload limit.
       const CAPTURE_W = 160;
       const CAPTURE_H = 120;
 
@@ -184,7 +179,6 @@ export function useOnlineSession(
           setSession((prev) =>
             prev ? { ...prev, members: list } : prev
           );
-          // Capture own member id from the PresenceChannel's members.me
           const meId = (channel.members.me as { id?: string } | undefined)?.id ?? '';
           setMyId(meId);
         }
@@ -224,7 +218,8 @@ export function useOnlineSession(
             setSession((prev) =>
               prev ? { ...prev, status: 'capturing' } : prev
             );
-            captureAndSubmit(channelName);
+            // Capture runs outside the updater — safe to call async here.
+            void captureAndSubmit(channelName);
           }
         }
       );
@@ -237,28 +232,38 @@ export function useOnlineSession(
             imageData: data.imageData,
           });
 
+          // Host triggers `client-collage-ready` once all photos are collected.
+          // The check is done outside any React state updater to avoid
+          // running async side-effects inside a pure updater function.
           if (isHost) {
-            setSession((prev) => {
-              if (!prev) return prev;
-              if (photosRef.current.size >= prev.members.length && prev.members.length > 0) {
-                // Trigger assembly asynchronously
-                assembleAll(channelName);
-              }
-              return prev;
-            });
+            const currentSession = sessionRef.current;
+            if (
+              currentSession &&
+              currentSession.members.length > 0 &&
+              photosRef.current.size >= currentSession.members.length
+            ) {
+              // Notify all participants (including self) to assemble locally.
+              void fetch('/api/session/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  channel: channelName,
+                  event: 'client-collage-ready',
+                  data: {},
+                }),
+              });
+            }
           }
         }
       );
 
-      channel.bind(
-        'client-collage',
-        (data: { collageUrl: string }) => {
-          setCollageUrl(data.collageUrl);
-          setSession((prev) => (prev ? { ...prev, status: 'done' } : prev));
-        }
-      );
+      // Every participant (host and guests) assembles the collage locally
+      // when they receive this signal. No JPEG data crosses Pusher.
+      channel.bind('client-collage-ready', () => {
+        void assembleLocal();
+      });
     },
-    [captureAndSubmit, assembleAll]
+    [captureAndSubmit, assembleLocal]
   );
 
   // -------------------------------------------------------------------------
