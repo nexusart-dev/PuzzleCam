@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { sessions, pruneExpired } from '@/lib/sessionStore';
+import { createSession, getSession, SessionData } from '@/lib/sessionStore';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const TOKEN_LENGTH = 6;
-const MAX_SESSIONS = 1000;
 
 function generateToken(): string {
   let token = '';
@@ -14,23 +13,17 @@ function generateToken(): string {
 }
 
 export async function POST(): Promise<NextResponse> {
-  pruneExpired();
-
-  if (sessions.size >= MAX_SESSIONS) {
-    return NextResponse.json(
-      { error: 'Server penuh, coba lagi nanti' },
-      { status: 503 }
-    );
-  }
-
+  // Generate a token that doesn't collide with an existing session
   let token: string;
+  let existing: SessionData | null;
   do {
     token = generateToken();
-  } while (sessions.has(token));
+    existing = await getSession(token);
+  } while (existing !== null);
 
   const channelName = `presence-puzzlecam-${token}`;
 
-  sessions.set(token, {
+  await createSession(token, {
     token,
     channelName,
     createdAt: Date.now(),
@@ -41,8 +34,6 @@ export async function POST(): Promise<NextResponse> {
 }
 
 export async function GET(request: Request): Promise<NextResponse> {
-  pruneExpired();
-
   const { searchParams } = new URL(request.url);
   const token = searchParams.get('token');
 
@@ -50,7 +41,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'token diperlukan' }, { status: 400 });
   }
 
-  const session = sessions.get(token.toUpperCase());
+  const session = await getSession(token.toUpperCase());
 
   if (!session) {
     return NextResponse.json(
@@ -61,5 +52,3 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   return NextResponse.json({ token: session.token, channelName: session.channelName });
 }
-
-

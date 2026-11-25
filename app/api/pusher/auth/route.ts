@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { pusherServer } from '@/lib/pusherServer';
-import { sessions } from '@/lib/sessionStore';
+import { getSession } from '@/lib/sessionStore';
 
 export async function POST(request: Request): Promise<NextResponse> {
   if (!pusherServer) {
@@ -26,7 +26,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const tokenMatch = /^presence-puzzlecam-([A-Z0-9]{6})$/.exec(channelName);
   if (tokenMatch) {
     const token = tokenMatch[1];
-    const session = sessions.get(token);
+    const session = await getSession(token);
 
     if (!session) {
       return NextResponse.json(
