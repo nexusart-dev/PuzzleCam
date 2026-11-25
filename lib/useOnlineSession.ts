@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Pusher from 'pusher-js';
-import type { Channel } from 'pusher-js';
+import type { PresenceChannel } from 'pusher-js';
 import { assemblePhotos } from './photoAssembly';
 import type { OnlineSession, SessionMember } from './types';
 
@@ -59,6 +59,7 @@ export interface UseOnlineSessionResult {
   error: string | null;
   countdownValue: number | null;
   collageUrl: string | null;
+  myId: string;
   createSession: () => Promise<void>;
   joinSession: (token: string) => Promise<void>;
   triggerCountdown: () => Promise<void>;
@@ -75,11 +76,12 @@ export function useOnlineSession(
   const [error, setError] = useState<string | null>(null);
   const [countdownValue, setCountdownValue] = useState<number | null>(null);
   const [collageUrl, setCollageUrl] = useState<string | null>(null);
+  const [myId, setMyId] = useState('');
 
   const pusherRef = useRef<Pusher | null>(null);
-  const channelRef = useRef<Channel | null>(null);
+  const channelRef = useRef<PresenceChannel | null>(null);
   const photosRef = useRef<Map<string, { name: string; imageData: string }>>(new Map());
-
+  const assemblingRef = useRef(false);
   const pusherUnconfigured = !isPusherConfigured();
 
   // -------------------------------------------------------------------------
@@ -88,6 +90,10 @@ export function useOnlineSession(
 
   const assembleAll = useCallback(
     async (channelName: string) => {
+      // Guard against re-entry: if already assembling, skip subsequent triggers
+      if (assemblingRef.current) return;
+      assemblingRef.current = true;
+
       setSession((prev) => (prev ? { ...prev, status: 'assembling' } : prev));
 
       const photos = Array.from(photosRef.current.entries()).map(([memberId, v]) => ({
@@ -138,8 +144,7 @@ export function useOnlineSession(
       const imageData = canvas.toDataURL('image/jpeg', 0.6);
 
       const channel = channelRef.current;
-      const me = (channel as unknown as { members?: { me?: { id: string } } })
-        ?.members?.me;
+      const me = channel?.members?.me as { id: string } | undefined;
       const memberId = me?.id ?? crypto.randomUUID();
 
       setSession((prev) => (prev ? { ...prev, status: 'capturing' } : prev));
@@ -163,7 +168,7 @@ export function useOnlineSession(
 
   const subscribeToChannel = useCallback(
     (pusher: Pusher, channelName: string, isHost: boolean) => {
-      const channel = pusher.subscribe(channelName);
+      const channel = pusher.subscribe(channelName) as PresenceChannel;
       channelRef.current = channel;
 
       channel.bind(
@@ -179,6 +184,9 @@ export function useOnlineSession(
           setSession((prev) =>
             prev ? { ...prev, members: list } : prev
           );
+          // Capture own member id from the PresenceChannel's members.me
+          const meId = (channel.members.me as { id?: string } | undefined)?.id ?? '';
+          setMyId(meId);
         }
       );
 
@@ -373,8 +381,7 @@ export function useOnlineSession(
       if (!session) return;
 
       const channel = channelRef.current;
-      const me = (channel as unknown as { members?: { me?: { id: string } } })
-        ?.members?.me;
+      const me = channel?.members?.me as { id: string } | undefined;
       const memberId = me?.id ?? crypto.randomUUID();
 
       await fetch('/api/session/trigger', {
@@ -407,7 +414,9 @@ export function useOnlineSession(
     setError(null);
     setCountdownValue(null);
     setCollageUrl(null);
+    setMyId('');
     photosRef.current.clear();
+    assemblingRef.current = false;
   }, []);
 
   // -------------------------------------------------------------------------
@@ -418,6 +427,7 @@ export function useOnlineSession(
     setCollageUrl(null);
     setSession((prev) => (prev ? { ...prev, status: 'idle' } : prev));
     photosRef.current.clear();
+    assemblingRef.current = false;
   }, []);
 
   // -------------------------------------------------------------------------
@@ -437,6 +447,7 @@ export function useOnlineSession(
     error,
     countdownValue,
     collageUrl,
+    myId,
     createSession,
     joinSession,
     triggerCountdown,

@@ -85,5 +85,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
 
+  session.memberCount += 1;
+
   return NextResponse.json({ token: session.token, channelName: session.channelName });
 }

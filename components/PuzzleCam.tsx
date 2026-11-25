@@ -53,6 +53,7 @@ export default function PuzzleCam() {
     error: onlineError,
     countdownValue,
     collageUrl,
+    myId,
     createSession,
     joinSession,
     triggerCountdown,
@@ -75,12 +76,6 @@ export default function PuzzleCam() {
     ctx.drawImage(video, 0, 0, 160, 120);
   }, [session]);
 
-  // Derive own member id from channel
-  const myId =
-    (
-      (session as unknown as null | { _channel?: { members?: { me?: { id: string } } } })
-        ?._channel?.members?.me?.id
-    ) ?? "";
 
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current || !stageRef.current) return;
